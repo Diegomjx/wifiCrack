@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Author: 
-# 	s4vitar v3.0
-#	Diegomjx v4.0
+#	s4vitar V3.0
+#	Diegomjx V4.0 - V5.0   
 
 # Colores
 greenColour="\e[0;32m\033[1m"
@@ -75,7 +75,7 @@ function select_ssid() {
     channels=($(grep -E '([A-Fa-f0-9]{2}:){5}[A-Fa-f0-9]{2}' temp-01.csv | awk -F',' '{print $4}' | sed 's/^ //'))
     
     while IFS= read -r line; do
-        ssids+=("$line")  # Guardar el SSID en el array sin perder los espacios
+    	ssids+=("$line")  # Guardar el SSID en el array sin perder los espacios
     done < <(grep -E '([A-Fa-f0-9]{2}:){5}[A-Fa-f0-9]{2}' temp-01.csv | awk -F',' '{print $14}' | sed 's/^ //')
     
     echo -e "\n${greenColour}  Detected networks:${endColour}"
@@ -191,7 +191,7 @@ function attack_pkmid() {
     fi
 }
 
-function pasivScann() {
+function pasiv_Scann() {
     clear
     echo -e "\n${greenColour}  [*] ¿Quieres escanear todas las redes o una en específico?${endColour}"
     echo -e "  ${blueColour}[1]${endColour} Todas las redes"
@@ -226,25 +226,75 @@ function pasivScann() {
         mostrarResultados
     done
 }
+function NO_Users(){
+	input_file="scan_results-01.csv"
 
-function mostrarResultados() {
+	# Buscar la línea donde comienza la sección de clientes
+	start_line=$(grep -n "Station MAC, First time seen, Last time seen" "$input_file" | cut -d: -f1)
+
+	if [[ -z "$start_line" ]]; then
+	    echo "Encabezado no encontrado."
+	    exit 1
+	fi
+
+	# Contar las líneas no vacías después del encabezado
+	local count=$(tail -n +"$((start_line + 1))" "$input_file" | sed '/^[[:space:]]*$/d' | wc -l)
+    
+    echo "$count"  # Devuelve el número de clientes
+	
+}
+
+
+function mostrarResultados() {  
     clear
-    echo -e "\n${blueColour}  ──── Redes detectadas ────${endColour}\n"
+    echo -e "\n${blueColour}  ────[ REDES DETECTADAS ]────${endColour}\n"
 
     if [[ ! -f "scan_results-01.csv" ]]; then
         echo -e "\n${redColour}  [!] No se encontraron datos aún...${endColour}"
         return
     fi
 
-    # Leer y mostrar las redes detectadas
-    awk -F',' 'NR>2 && $1 ~ /([A-Fa-f0-9]{2}:){5}[A-Fa-f0-9]{2}/ {print $1 "," $14 "," $8}' scan_results-01.csv | while IFS=',' read -r bssid ssid clients; do
-        echo -e "${greenColour}BSSID:${endColour} $bssid, ${greenColour}SSID:${endColour} $ssid, ${greenColour}Clientes:${endColour} $clients"
+    # Separar secciones (Redes y Clientes)
+    networks_section=true
+
+    echo -e "┌─────────────────────────────────────┬───────────────────────┬─────────────┐"
+    echo -e "│ ${yellowColour}SSID                               ${endColour} │ ${yellowColour}BSSID                ${endColour} │ ${yellowColour}Clientes${endColour}    │"
+    echo -e "├─────────────────────────────────────┼───────────────────────┼─────────────┤"
+
+    while IFS=',' read -r bssid _ _ channel speed _ _ _ _ _ _ _ _ ssid _ ; do
+    	
+        if [[ "$bssid" == "Station MAC" ]]; then
+            networks_section=false
+            printf "│ %-73s │\n" "CLientes conectados:"
+            continue
+        fi
         
-        # Mostrar clientes conectados a cada red
-        awk -F',' -v ap="$bssid" '$6 == ap {print "   " NR-2 ", " $1}' scan_results-01.csv
-        echo ""
-    done
+        if [[ "$bssid" == "BSSID" ]]; then
+            networks_section=true  
+            continue
+        fi
+	num_clients=$(NO_Users)
+        if [[ "$networks_section" == true && "$bssid" =~ ([A-Fa-f0-9]{2}:){5}[A-Fa-f0-9]{2} ]]; then
+            # Es una red WiFi (AP)
+            printf "│ %-35s │ %-21s │ %-11s │\n" "$ssid" "$bssid" "$num_clients"
+            echo -e "├─────────────────────────────────────┴───────────────────────┴─────────────┤"
+        fi
+        
+        
+        if [[ "$networks_section" == false && "$bssid" =~ ([A-Fa-f0-9]{2}:){5}[A-Fa-f0-9]{2} ]]; then
+              
+              printf "│ %-75s │\n" " • MAC:$bssid Power:$channel Packets:$speed"
+           
+            #printf "│ %-35s │ %-21s │ %-10s │\n" "$ssid" "$bssid" "?"
+        
+        
+        fi
+            
+            
+    done < scan_results-01.csv
+echo -e "└───────────────────────────────────────────────────────────────────────────┘"
 }
+
 
 
 # Main
@@ -258,8 +308,8 @@ fi
 dependencies=(aircrack-ng macchanger xterm hcxdumptool hcxpcaptool hashcat)
 for dep in "${dependencies[@]}"; do
     if ! command -v $dep &> /dev/null; then
-        echo -e "${redColour}  [!] Missing $dep! Installing...${endColour}"
-        apt-get install -y $dep > /dev/null 2>&1
+	echo -e "${redColour}  [!] Missing $dep! Installing...${endColour}"
+	apt-get install -y $dep > /dev/null 2>&1
     fi
 done
 
@@ -269,19 +319,19 @@ airmon-ng start $networkCard > /dev/null 2>&1
 
 while true; do
 
-        echo -e "\n${greenColour}  Attack vectors:${endColour}"
-        echo -e "  ${purpleColour}1.${endColour} Handshake Capture"
-        echo -e "  ${purpleColour}2.${endColour} PMKID Attack"
-        echo -e "  ${purpleColour}3.${endColour} Passive Scann"
-        echo -en $'\n  '"${greenColour}[>]${endColour} ${turquoiseColour}Select attack: ${endColour}"
-        read attack_choice
+	echo -e "\n${greenColour}  Attack vectors:${endColour}"
+	echo -e "  ${purpleColour}1.${endColour} Handshake Capture"
+	echo -e "  ${purpleColour}2.${endColour} PMKID Attack"
+	echo -e "  ${purpleColour}3.${endColour} Passive Scann"
+	echo -en $'\n  '"${greenColour}[>]${endColour} ${turquoiseColour}Select attack: ${endColour}"
+	read attack_choice
 
-        case $attack_choice in
-            1) attack_handshake ;;
-            2) attack_pkmid ;;
-            3) pasivScann ;;
-            *) echo -e "${redColour}  [!] Invalid option!${endColour}"; break ;;
-        esac
+	case $attack_choice in
+	    1) attack_handshake ;;
+	    2) attack_pkmid ;;
+	    3) pasiv_Scann ;;
+	    *) echo -e "${redColour}  [!] Invalid option!${endColour}"; break ;;
+	esac	
 done
 
 ctrl_c
@@ -290,3 +340,6 @@ rm Captura* myHashes 2>/dev/null
 }
 
 main
+
+
+
